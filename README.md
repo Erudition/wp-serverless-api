@@ -27,24 +27,56 @@ This plugin dynamically discovers all publicly available REST API collections (p
 ### 1.1.0
 
 - Added **Relative URL Support**: Automatically converts all `home_url` matches to relative paths in the JSON output. This fixes the issue where staging URLs would persist in production artifacts.
-- Added `media` to the default path exclusion list.
-- Improved Path UI: Stripped namespace prefixes from the Input Path column for cleaner reading.
-- Enhanced Preview Links: Now correctly distinguishes between lists ("View N items") and objects ("View N fields").
+- Enabled relative URL conversion by default (toggleable in settings).
 - Added "View in browser" link to the successful build notice for instant data verification.
 
 ### 1.0.0
 
 - Stable release.
+- Added "View in browser" link to the database build success notice.
+- Refined input path display by stripping namespace prefixes.
+- Enhanced preview links to distinguish between lists (items) and objects (fields).
+- Finalized UI grouping and tab organization.
+
+### 0.6.2
+
+- UI Refinement: "Input Path" column now strips the namespace prefix already shown in the section header.
+- Preview Link Enhancements: Lists show "View N items", Objects show "View N fields".
+- Added `media` to the default exclusion list.
+
+### 0.6.1
+
+- UI Refinement: Moved "Build Database Now" button to the bottom and added a top-level "Re-discover" button.
+- Updated preview links for private endpoints to show "Not public" in grey while remaining clickable.
+- Expanded default exclusion list to include `wp/v2/types` and `wp/v2/taxonomies`.
+
+### 0.6.0
+
+- Organized Paths and Fields into grouped sections by component and version (e.g., `wp v2`, `elementor v1`).
+- Enhanced Fields tab to show fields per component, filtered by currently selected paths.
+
+### 0.5.1
+
+- Improved Friendly Name discovery for Taxonomies and core listing endpoints.
+- Fixed "Reset to Defaults" behavior to properly clear cache and refresh UI.
+
+### 0.5.0
+
+- Split settings into "Paths" and "Fields" tabs.
+- Added `wp/v2/navigation` and `wp/v2/blocks` to default exclusions.
+
+### 0.4.0
+
 - Added comprehensive Admin Settings page with Output Path customization.
 - Added field-level exclusions with visual nested indentation.
-- Improved Friendly Name discovery for Taxonomies and core endpoints.
-- Organized Paths and Fields into grouped sections by component and version.
+- Added "Index Now" and "Reset to Defaults" buttons.
 
 ### 0.3.0
 
 - Added dynamic discovery of all public REST API collection routes.
-- Switched to WordPress HTTP API (`wp_remote_get`) for better reliability.
-- Offloaded indexing to a background WP-Cron task.
+- Added support for Custom Post Types (CPT) and plugin-provided endpoints.
+- Switched to WordPress HTTP API (`wp_remote_get`) for better reliability and access checking.
+- Offloaded indexing to a background WP-Cron task for non-blocking post saves.
 
 ### 0.2.1
 
