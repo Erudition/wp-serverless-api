@@ -41,8 +41,8 @@ function get_api_routes() {
 
     $found_routes = array();
     foreach ( $data['routes'] as $path => $details ) {
-        // Skip root and namespace roots
-        if ( $path === '/' || ( isset( $details['namespace'] ) && $path === '/' . $details['namespace'] ) ) {
+        // Only include standard wp/v2 routes
+        if ( strpos( $path, '/wp/v2/' ) !== 0 ) {
             continue;
         }
 
@@ -92,8 +92,10 @@ function compile_db( $routes = array() ) {
         $body = wp_remote_retrieve_body( $response );
         $jsonData = json_decode( $body, true );
 
-        if ( is_array( $jsonData ) ) {
-            $db_array[$route] = $jsonData;
+        // Only include non-empty collections and simplify the key
+        if ( is_array( $jsonData ) && ! empty( $jsonData ) ) {
+            $key = basename( $route );
+            $db_array[$key] = $jsonData;
         }
     }
 
