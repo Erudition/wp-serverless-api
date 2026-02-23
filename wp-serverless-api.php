@@ -4,7 +4,7 @@
 Plugin Name: WP Serverless API
 Plugin URI: https://github.com/getshifter/wp-serverless-api
 Description: WordPress REST API to JSON File
-Version: 0.5.0
+Version: 0.5.1
 Author: Shifter
 Author URI: https://getshifter.io
 */
@@ -30,26 +30,42 @@ function wp_sls_api_discover_all() {
         $data = json_decode( $body, true );
     }
 
+    $rest_bases = array();
+
+    // Fetch Post Types
     $types_url = esc_url( home_url( '/' ) ) . 'wp-json/wp/v2/types/';
     $types_response = wp_remote_get( $types_url );
-    $types = array();
     if ( ! is_wp_error( $types_response ) && wp_remote_retrieve_response_code($types_response) === 200 ) {
-        $types_body = wp_remote_retrieve_body( $types_response );
-        $types = json_decode( $types_body, true );
-    }
-    
-    $rest_bases = array();
-    if ( is_array($types) ) {
-        foreach ( $types as $type_slug => $type_info ) {
-            if ( isset( $type_info['rest_base'] ) ) {
-                $rest_bases[$type_info['rest_base']] = array(
-                    'name' => isset($type_info['name']) ? $type_info['name'] : $type_slug,
-                    'slug' => $type_slug,
-                );
+        $types = json_decode( wp_remote_retrieve_body( $types_response ), true );
+        if ( is_array($types) ) {
+            foreach ( $types as $type_slug => $type_info ) {
+                if ( isset( $type_info['rest_base'] ) ) {
+                    $rest_bases[$type_info['rest_base']] = array(
+                        'name' => isset($type_info['name']) ? $type_info['name'] : $type_slug,
+                        'slug' => $type_slug,
+                    );
+                }
             }
         }
     }
 
+    // Fetch Taxonomies
+    $tax_url = esc_url( home_url( '/' ) ) . 'wp-json/wp/v2/taxonomies/';
+    $tax_response = wp_remote_get( $tax_url );
+    if ( ! is_wp_error( $tax_response ) && wp_remote_retrieve_response_code($tax_response) === 200 ) {
+        $taxonomies = json_decode( wp_remote_retrieve_body( $tax_response ), true );
+        if ( is_array($taxonomies) ) {
+            foreach ( $taxonomies as $tax_slug => $tax_info ) {
+                if ( isset( $tax_info['rest_base'] ) ) {
+                    $rest_bases[$tax_info['rest_base']] = array(
+                        'name' => isset($tax_info['name']) ? $tax_info['name'] : $tax_slug,
+                        'slug' => $tax_slug,
+                    );
+                }
+            }
+        }
+    }
+    
     $paths = array();
 
     if ( isset( $data['routes'] ) ) {
@@ -128,15 +144,16 @@ function wp_sls_api_discover_all() {
             $is_default_checked = false;
             $friendly_name = isset($rest_bases[$base_name]['name']) ? $rest_bases[$base_name]['name'] : '';
             
+            // Hardcoded friendly names for listing endpoints
+            if ( $clean_path === 'wp/v2/types' ) $friendly_name = 'Post Types';
+            if ( $clean_path === 'wp/v2/taxonomies' ) $friendly_name = 'Taxonomies';
+
             if ( strpos( $path, '/wp/v2/' ) === 0 ) {
-                $type_slug = '';
-                if ( isset( $rest_bases[$base_name] ) ) {
+                if ( !empty($friendly_name) || isset( $rest_bases[$base_name] ) ) {
                     $is_default_checked = true;
-                    $type_slug = $rest_bases[$base_name]['slug'];
                 }
                 
-                if ( $type_slug === 'nav_menu_item' || 
-                     $base_name === 'nav_menu_item' || 
+                if ( $base_name === 'nav_menu_item' || 
                      $base_name === 'navigation' ||
                      $base_name === 'blocks' ||
                      strpos($base_name, 'wp_') === 0 || 
@@ -234,7 +251,9 @@ function compile_db( $routes = array() ) {
         if ( is_array( $jsonData ) && ! empty( $jsonData ) ) {
             if ( !empty($excluded_fields) ) {
                 foreach ( $jsonData as &$item ) {
-                    $item = wp_sls_api_filter_fields($item, $excluded_fields);
+                    if ( is_array($item) ) {
+                        $item = wp_sls_api_filter_fields($item, $excluded_fields);
+                    }
                 }
             }
 
@@ -314,7 +333,8 @@ function wp_sls_api_settings_page() {
         delete_option( 'wp_sls_api_excluded_fields' );
         delete_option( 'wp_sls_api_output_paths' );
         delete_transient( 'wp_sls_api_discovery' );
-        echo '<div class="notice notice-success is-dismissible"><p>Settings reset to defaults.</p></div>';
+        echo '<script>window.location.href="?page=wp-sls-api&tab=' . esc_attr($current_tab) . '";</script>';
+        return;
     }
 
     if ( isset( $_POST['wp_sls_api_save'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {

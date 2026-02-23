@@ -22,12 +22,14 @@ This plugin dynamically discovers all publicly available REST API collections (p
 
 ## CHANGELOG
 
-### 0.5.0
+### 0.5.1
 
-- Split settings into "Paths" and "Fields" tabs.
-- Dynamic Field List: Only show fields present in selected paths.
+- Improved Friendly Name discovery: Now fetches and displays names for Taxonomies and core listing endpoints (`types`, `taxonomies`).
+- Fixed "Reset to Defaults" behavior to correctly restore all checkboxes and clear discovery cache.
 - Added `wp/v2/navigation` and `wp/v2/blocks` to default exclusions.
-- Cleaned up UI hints and improved layout.
+- Redirect after reset to ensure UI state is refreshed correctly.
+
+### 0.5.0
 
 ### 0.4.0
 
