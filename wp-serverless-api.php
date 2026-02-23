@@ -4,7 +4,7 @@
 Plugin Name: WP Serverless API
 Plugin URI: https://github.com/getshifter/wp-serverless-api
 Description: WordPress REST API to JSON File
-Version: 0.6.0
+Version: 0.6.1
 Author: Shifter
 Author URI: https://getshifter.io
 */
@@ -356,9 +356,14 @@ add_action('admin_head', 'wp_sls_api_admin_menu_styles');
 function wp_sls_api_settings_page() {
     $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'paths';
 
-    if ( isset( $_POST['wp_sls_api_index_now'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
+    if ( isset( $_POST['wp_sls_api_build_now'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
         build_db();
-        echo '<div class="notice notice-success is-dismissible"><p>Database indexed successfully.</p></div>';
+        echo '<div class="notice notice-success is-dismissible"><p>Database built successfully.</p></div>';
+    }
+
+    if ( isset( $_POST['wp_sls_api_rediscover'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
+        delete_transient( 'wp_sls_api_discovery' );
+        echo '<div class="notice notice-success is-dismissible"><p>Discovery cache refreshed.</p></div>';
     }
 
     if ( isset( $_POST['wp_sls_api_reset'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
@@ -371,10 +376,6 @@ function wp_sls_api_settings_page() {
     }
 
     if ( isset( $_POST['wp_sls_api_save'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
-        if ( isset($_POST['wp_sls_api_refresh_cache']) ) {
-            delete_transient('wp_sls_api_discovery');
-        }
-        
         $discovery = wp_sls_api_get_discovery();
         $groups = $discovery['groups'];
 
@@ -427,6 +428,18 @@ function wp_sls_api_settings_page() {
     $saved_excluded_fields = get_option('wp_sls_api_excluded_fields', array('guid', '_links/curies'));
     $saved_output_paths = get_option('wp_sls_api_output_paths', array());
 
+    $active_fields = array();
+    foreach ( $groups as $group ) {
+        foreach ( $group['paths'] as $path => $info ) {
+            $is_checked = $has_saved_paths ? !in_array($path, $saved_excluded_paths) : $info['default_checked'];
+            if ( $is_checked && $info['accessible'] ) {
+                foreach ($info['fields'] as $f) $active_fields[$f] = true;
+            }
+        }
+    }
+    $display_fields = array_keys($active_fields);
+    sort($display_fields);
+
     ?>
     <div class="wrap">
         <h1>WP Serverless API Settings</h1>
@@ -440,7 +453,7 @@ function wp_sls_api_settings_page() {
             <?php wp_nonce_field( 'wp_sls_api_save_action' ); ?>
             
             <div class="sls-api-filter-row">
-                <input type="submit" name="wp_sls_api_index_now" class="button" value="Index Now" style="float: right;" />
+                <input type="submit" name="wp_sls_api_rediscover" class="button" value="Re-discover" style="float: right;" />
                 <?php if ($current_tab === 'paths'): ?>
                     <strong>Filter List:</strong>
                     <label style="margin-left: 10px;"><input type="checkbox" id="filter-public" checked> Public Only</label>
@@ -486,11 +499,11 @@ function wp_sls_api_settings_page() {
                                 </td>
                                 <td><?php echo esc_html($info['name']); ?></td>
                                 <td>
-                                    <a href="<?php echo esc_url($info['url']); ?>" target="_blank">
+                                    <a href="<?php echo esc_url($info['url']); ?>" target="_blank" <?php if(!$accessible) echo 'style="color:#999;"'; ?>>
                                         <?php if ( $accessible ): ?>
                                             <?php echo $info['total_items'] > 0 ? sprintf('View %d items', $info['total_items']) : 'View'; ?>
                                         <?php else: ?>
-                                            <span style="color:#cc0000;">View Error</span>
+                                            Not public
                                         <?php endif; ?>
                                     </a>
                                 </td>
@@ -533,10 +546,8 @@ function wp_sls_api_settings_page() {
 
             <p class="submit">
                 <input type="submit" name="wp_sls_api_save" class="button button-primary" value="Save Changes" />
+                <input type="submit" name="wp_sls_api_build_now" class="button" value="Build Database Now" />
                 <input type="submit" name="wp_sls_api_reset" class="button" value="Reset to Defaults" onclick="return confirm('Are you sure you want to reset all settings to defaults?');" />
-                <label style="margin-left: 15px;">
-                    <input type="checkbox" name="wp_sls_api_refresh_cache" value="1" /> Force Refresh Discovery Cache
-                </label>
             </p>
         </form>
     </div>
@@ -562,7 +573,7 @@ function wp_sls_api_settings_page() {
                             row.classList.add('sls-api-path-hidden');
                         } else {
                             row.classList.remove('sls-api-path-hidden');
-                    visibleRows++;
+                            visibleRows++;
                         }
                     });
                     

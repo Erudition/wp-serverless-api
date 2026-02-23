@@ -15,6 +15,7 @@ This plugin dynamically discovers all publicly available REST API collections (p
 - **Dynamic Discovery**: Automatically finds all valid REST API collection routes.
 - **Asynchronous Processing**: Indexing runs in the background via WP-Cron to prevent UI blocking.
 - **Tabbed Interface**: Organized settings for Paths and Fields.
+- **Component-Based Grouping**: Discovered paths and fields are organized by their source component (e.g., `wp v2`, `pods v1`).
 - **Customizable Output**: Rename JSON keys for each endpoint.
 - **Granular Field Filtering**: Exclude specific fields (e.g., `guid`, `_links`) from the final output. The field list automatically updates based on selected paths.
 - **Accessibility Verification**: Automatically identifies and flags endpoints that are not publicly accessible.
@@ -22,15 +23,25 @@ This plugin dynamically discovers all publicly available REST API collections (p
 
 ## CHANGELOG
 
+### 0.6.1
+
+- UI Refinement: Moved "Build Database Now" button to the bottom and added a top-level "Re-discover" button.
+- Updated preview links for private endpoints to show "Not public" in grey while remaining clickable.
+- Organized Paths and Fields into grouped sections by component and version.
+- Improved Friendly Name discovery for Taxonomies and core endpoints.
+- Expanded default exclusion list to include `wp/v2/types`, `wp/v2/taxonomies`, `wp/v2/navigation`, and `wp/v2/blocks`.
+
 ### 0.6.0
 
-- Organized Paths and Fields into grouped sections by component and version (e.g., `wp v2`, `elementor v1`).
+- Organized Paths and Fields into grouped sections by component and version.
 - Improved Friendly Name discovery for Taxonomies and core endpoints.
-- Expanded default exclusion list to include `wp/v2/types` and `wp/v2/taxonomies`.
 - Fields tab now dynamically filters to show only fields from currently selected paths, grouped by component.
-- Improved "Reset to Defaults" logic with automatic UI refresh.
 
-### 0.5.1
+### 0.5.0
+
+- Split settings into "Paths" and "Fields" tabs.
+- Dynamic Field List: Only show fields present in selected paths.
+- Added `wp/v2/navigation` and `wp/v2/blocks` to default exclusions.
 
 ### 0.4.0
 
@@ -38,21 +49,9 @@ This plugin dynamically discovers all publicly available REST API collections (p
 - Added "Output Path" customization to rename JSON keys.
 - Added field-level exclusions with visual nested indentation.
 - Added "Index Now" and "Reset to Defaults" buttons.
-- Improved filtering: Only considers GET endpoints with no required arguments.
-- Added "Public Only" and "Named Only" UI filters for discovered paths.
-- Display live item counts in the discovery table.
 
 ### 0.3.0
 
 - Added dynamic discovery of all public REST API collection routes.
-- Added support for Custom Post Types (CPT) and plugin-provided endpoints (Pods, Elementor, etc.) without manual configuration.
-- Switched to WordPress HTTP API (`wp_remote_get`) for better reliability and access checking.
-- Offloaded indexing to a background WP-Cron task for non-blocking post saves.
-
-### 0.2.1
-
-- Removed environment determination to generate db.json even in local environment [#2](https://github.com/getshifter/wp-serverless-api/pull/2)
-
-### 0.2.0
-
-- [BREAKING CHANGE] Change save path from `/wp-content/uploads/wp-sls-api/db.json` to `/wp-content/wp-sls-api/db.json`
+- Switched to WordPress HTTP API (`wp_remote_get`) for better reliability.
+- Offloaded indexing to a background WP-Cron task.
