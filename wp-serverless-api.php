@@ -4,7 +4,7 @@
 Plugin Name: WP Serverless API
 Plugin URI: https://github.com/getshifter/wp-serverless-api
 Description: WordPress REST API to JSON File
-Version: 0.2.1
+Version: 0.3.0
 Author: Shifter
 Author URI: https://getshifter.io
 */
@@ -21,21 +21,80 @@ if ( !get_option('permalink_structure') ) {
     add_action( 'admin_notices', 'enable_permalinks_notice' );
 }
 
-function compile_db(
-    $routes = array(
-        'posts',
-        'pages',
-        'media'
-    )
-) {
+/**
+ * Get available REST API routes dynamically
+ */
+function get_api_routes() {
+    $url = esc_url( home_url( '/' ) ) . 'wp-json/';
+    $response = wp_remote_get( $url );
+
+    if ( is_wp_error( $response ) ) {
+        return array( 'wp/v2/posts', 'wp/v2/pages', 'wp/v2/media' );
+    }
+
+    $body = wp_remote_retrieve_body( $response );
+    $data = json_decode( $body, true );
+
+    if ( ! isset( $data['routes'] ) ) {
+        return array( 'wp/v2/posts', 'wp/v2/pages', 'wp/v2/media' );
+    }
+
+    $found_routes = array();
+    foreach ( $data['routes'] as $path => $details ) {
+        // Skip root and namespace roots
+        if ( $path === '/' || ( isset( $details['namespace'] ) && $path === '/' . $details['namespace'] ) ) {
+            continue;
+        }
+
+        // Skip routes with regex parameters (individual items or sub-resources)
+        if ( strpos( $path, '(?P<' ) !== false ) {
+            continue;
+        }
+
+        // Skip schema endpoints
+        if ( substr( $path, -7 ) === '/schema' ) {
+            continue;
+        }
+
+        // Only include routes that support GET
+        $methods = isset( $details['methods'] ) ? $details['methods'] : array();
+        if ( ! in_array( 'GET', $methods ) ) {
+            continue;
+        }
+
+        $found_routes[] = ltrim( $path, '/' );
+    }
+
+    return array_unique( $found_routes );
+}
+
+function compile_db( $routes = array() ) {
+
+    if ( empty( $routes ) ) {
+        $routes = get_api_routes();
+    }
 
     $db_array = array();
 
-    foreach ($routes as $route) {
-        $url =  esc_url( home_url( '/' ) ) . 'wp-json/wp/v2/' . $route;
-        $jsonData = json_decode( file_get_contents($url) );
+    foreach ( $routes as $route ) {
+        $url =  esc_url( home_url( '/' ) ) . 'wp-json/' . $route;
+        
+        $response = wp_remote_get( $url );
+        if ( is_wp_error( $response ) ) {
+            continue;
+        }
 
-        $db_array[$route] = (array) $jsonData;
+        $code = wp_remote_retrieve_response_code( $response );
+        if ( $code !== 200 ) {
+            continue;
+        }
+
+        $body = wp_remote_retrieve_body( $response );
+        $jsonData = json_decode( $body, true );
+
+        if ( is_array( $jsonData ) ) {
+            $db_array[$route] = $jsonData;
+        }
     }
 
     $db = json_encode($db_array);
