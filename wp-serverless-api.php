@@ -64,8 +64,29 @@ function wp_sls_api_discover_all() {
             // Skip schema endpoints
             if ( substr( $path, -7 ) === '/schema' ) continue;
 
-            $methods = isset( $details['methods'] ) ? $details['methods'] : array();
-            if ( ! in_array( 'GET', $methods ) ) continue;
+            // Only include routes that support GET
+            if ( ! isset($details['endpoints']) || ! is_array($details['endpoints']) ) continue;
+            
+            $valid_get_endpoint = false;
+            foreach ($details['endpoints'] as $endpoint) {
+                if ( in_array('GET', $endpoint['methods']) ) {
+                    $has_required_args = false;
+                    if ( isset($endpoint['args']) && is_array($endpoint['args']) ) {
+                        foreach ($endpoint['args'] as $arg_details) {
+                            if ( isset($arg_details['required']) && $arg_details['required'] === true ) {
+                                $has_required_args = true;
+                                break;
+                            }
+                        }
+                    }
+                    if ( ! $has_required_args ) {
+                        $valid_get_endpoint = true;
+                        break;
+                    }
+                }
+            }
+
+            if ( ! $valid_get_endpoint ) continue;
 
             $clean_path = ltrim( $path, '/' );
             $base_name = basename( $clean_path );
@@ -105,6 +126,8 @@ function wp_sls_api_discover_all() {
             }
 
             $is_default_checked = false;
+            $friendly_name = isset($rest_bases[$base_name]['name']) ? $rest_bases[$base_name]['name'] : '';
+            
             if ( strpos( $path, '/wp/v2/' ) === 0 ) {
                 $type_slug = '';
                 if ( isset( $rest_bases[$base_name] ) ) {
@@ -123,7 +146,7 @@ function wp_sls_api_discover_all() {
 
             $paths[$clean_path] = array(
                 'accessible' => $is_accessible,
-                'name' => isset($rest_bases[$base_name]['name']) ? $rest_bases[$base_name]['name'] : '',
+                'name' => $friendly_name,
                 'default_checked' => $is_default_checked,
                 'url' => esc_url( home_url( '/' ) ) . 'wp-json/' . $clean_path,
                 'total_items' => $total_items,
@@ -267,7 +290,21 @@ function wp_sls_api_admin_menu() {
     add_options_page( 'WP Serverless API Settings', 'WP Serverless API', 'manage_options', 'wp-sls-api', 'wp_sls_api_settings_page' );
 }
 
+function wp_sls_api_admin_menu_styles() {
+    echo '<style>
+        .sls-api-filter-row { margin: 10px 0; background: #f6f7f7; padding: 10px; border: 1px solid #ccd0d4; }
+        .sls-api-path-hidden { display: none !important; }
+        .sls-api-field-nested { margin-left: 25px; border-left: 2px solid #eee; padding-left: 10px; }
+    </style>';
+}
+add_action('admin_head', 'wp_sls_api_admin_menu_styles');
+
 function wp_sls_api_settings_page() {
+    if ( isset( $_POST['wp_sls_api_index_now'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
+        build_db();
+        echo '<div class="notice notice-success is-dismissible"><p>Database indexed successfully.</p></div>';
+    }
+
     if ( isset( $_POST['wp_sls_api_save'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
         if ( isset($_POST['wp_sls_api_refresh_cache']) ) {
             delete_transient('wp_sls_api_discovery');
@@ -323,9 +360,16 @@ function wp_sls_api_settings_page() {
         <form method="post" action="">
             <?php wp_nonce_field( 'wp_sls_api_save_action' ); ?>
             
+            <div class="sls-api-filter-row">
+                <strong>Filter List:</strong>
+                <label style="margin-left: 10px;"><input type="checkbox" id="filter-public" checked> Public Only</label>
+                <label style="margin-left: 10px;"><input type="checkbox" id="filter-named" checked> Named Only</label>
+                <input type="submit" name="wp_sls_api_index_now" class="button" value="Index Now" style="float: right;" />
+            </div>
+
             <h2>Discovered Paths</h2>
             <p>Uncheck paths to exclude them from the generated JSON. Non-<code>wp/v2</code> paths are unchecked by default.</p>
-            <table class="wp-list-table widefat fixed striped">
+            <table class="wp-list-table widefat fixed striped" id="paths-table">
                 <thead>
                     <tr>
                         <th class="manage-column column-cb check-column"><input type="checkbox" id="cb-select-all-1"></th>
@@ -342,8 +386,13 @@ function wp_sls_api_settings_page() {
                         $disabled_attr = ! $accessible ? 'disabled' : '';
                         if ( ! $accessible ) $is_checked = false; 
                         $out_val = isset($saved_output_paths[$path]) ? $saved_output_paths[$path] : $info['base_name'];
+                        $has_name = !empty($info['name']);
+                        
+                        $row_classes = array();
+                        if ( !$accessible ) $row_classes[] = 'row-private';
+                        if ( !$has_name ) $row_classes[] = 'row-unnamed';
                     ?>
-                    <tr>
+                    <tr class="<?php echo implode(' ', $row_classes); ?>">
                         <th class="check-column">
                             <input type="checkbox" name="included_paths[]" value="<?php echo esc_attr($path); ?>" <?php checked($is_checked); ?> <?php echo $disabled_attr; ?> />
                         </th>
@@ -355,7 +404,7 @@ function wp_sls_api_settings_page() {
                         <td>
                             <a href="<?php echo esc_url($info['url']); ?>" target="_blank">
                                 <?php if ( $accessible ): ?>
-                                    View <?php echo (int) $info['total_items']; ?> items
+                                    <?php echo $info['total_items'] > 0 ? sprintf('View %d items', $info['total_items']) : 'View'; ?>
                                 <?php else: ?>
                                     <span style="color:#cc0000;">View Error</span>
                                 <?php endif; ?>
@@ -372,9 +421,9 @@ function wp_sls_api_settings_page() {
                 <?php foreach ( $fields as $field ): 
                     $is_checked = !in_array($field, $saved_excluded_fields);
                     $is_nested = strpos($field, '/') !== false;
-                    $margin_left = $is_nested ? '20px' : '0px';
+                    $field_class = $is_nested ? 'sls-api-field-nested' : '';
                 ?>
-                <div style="margin-bottom: 5px; margin-left: <?php echo $margin_left; ?>;">
+                <div style="margin-bottom: 5px;" class="<?php echo $field_class; ?>">
                     <label>
                         <input type="checkbox" name="included_fields[]" value="<?php echo esc_attr($field); ?>" <?php checked($is_checked); ?> />
                         <code><?php echo esc_html($field); ?></code>
@@ -392,12 +441,41 @@ function wp_sls_api_settings_page() {
         </form>
     </div>
     <script>
-        document.getElementById('cb-select-all-1').addEventListener('change', function(e) {
-            var checkboxes = document.querySelectorAll('input[name="included_paths[]"]:not(:disabled)');
-            for (var i = 0; i < checkboxes.length; i++) {
-                checkboxes[i].checked = e.target.checked;
+        (function() {
+            var publicFilter = document.getElementById('filter-public');
+            var namedFilter = document.getElementById('filter-named');
+            var table = document.getElementById('paths-table');
+            
+            function applyFilters() {
+                var rows = table.querySelectorAll('tbody tr');
+                for (var i = 0; i < rows.length; i++) {
+                    var row = rows[i];
+                    var isPrivate = row.classList.contains('row-private');
+                    var isUnnamed = row.classList.contains('row-unnamed');
+                    
+                    var hide = false;
+                    if (publicFilter.checked && isPrivate) hide = true;
+                    if (namedFilter.checked && isUnnamed) hide = true;
+                    
+                    if (hide) {
+                        row.classList.add('sls-api-path-hidden');
+                    } else {
+                        row.classList.remove('sls-api-path-hidden');
+                    }
+                }
             }
-        });
+            
+            publicFilter.addEventListener('change', applyFilters);
+            namedFilter.addEventListener('change', applyFilters);
+            applyFilters(); // Initial state
+
+            document.getElementById('cb-select-all-1').addEventListener('change', function(e) {
+                var checkboxes = document.querySelectorAll('input[name="included_paths[]"]:not(:disabled)');
+                for (var i = 0; i < checkboxes.length; i++) {
+                    checkboxes[i].checked = e.target.checked;
+                }
+            });
+        })();
     </script>
     <?php
 }
