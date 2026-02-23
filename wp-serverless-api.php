@@ -272,33 +272,69 @@ function compile_db( $routes = array() ) {
     $db_array = array();
 
     foreach ( $routes as $route ) {
-        $url =  esc_url( home_url( '/' ) ) . 'wp-json/' . $route;
-        
-        $response = wp_remote_get( $url );
-        if ( is_wp_error( $response ) ) {
-            continue;
-        }
+        $page = 1;
+        $total_pages = 1;
+        $all_items = array();
+        $is_collection = true;
 
-        $code = wp_remote_retrieve_response_code( $response );
-        if ( $code !== 200 ) {
-            continue;
-        }
+        while ( $page <= $total_pages ) {
+            $url = esc_url( home_url( '/' ) ) . 'wp-json/' . $route;
+            $url = add_query_arg( array(
+                'per_page' => 100,
+                'page'     => $page,
+            ), $url );
+            
+            $response = wp_remote_get( $url, array( 'timeout' => 30 ) );
+            if ( is_wp_error( $response ) ) {
+                break;
+            }
 
-        $body = wp_remote_retrieve_body( $response );
-        $jsonData = json_decode( $body, true );
+            $code = wp_remote_retrieve_response_code( $response );
+            if ( $code !== 200 ) {
+                break;
+            }
 
-        // Only include non-empty collections and simplify the key
-        if ( is_array( $jsonData ) && ! empty( $jsonData ) ) {
-            if ( !empty($excluded_fields) ) {
-                foreach ( $jsonData as &$item ) {
-                    if ( is_array($item) ) {
-                        $item = wp_sls_api_filter_fields($item, $excluded_fields);
-                    }
+            if ( $page === 1 ) {
+                $total_pages = (int) wp_remote_retrieve_header( $response, 'x-wp-totalpages' );
+                if ( $total_pages === 0 ) {
+                    $total_pages = 1;
+                    $is_collection = false;
                 }
             }
 
-            $key = isset($custom_output_paths[$route]) && !empty($custom_output_paths[$route]) ? $custom_output_paths[$route] : basename( $route );
-            $db_array[$key] = $jsonData;
+            $body = wp_remote_retrieve_body( $response );
+            $jsonData = json_decode( $body, true );
+
+            if ( ! is_array( $jsonData ) ) {
+                break;
+            }
+
+            if ( $is_collection ) {
+                $all_items = array_merge( $all_items, $jsonData );
+            } else {
+                $all_items = $jsonData;
+                break; // Not a collection, just a single object
+            }
+
+            $page++;
+        }
+
+        // Only include non-empty results and simplify the key
+        if ( ! empty( $all_items ) ) {
+            if ( ! empty( $excluded_fields ) ) {
+                if ( $is_collection ) {
+                    foreach ( $all_items as &$item ) {
+                        if ( is_array( $item ) ) {
+                            $item = wp_sls_api_filter_fields( $item, $excluded_fields );
+                        }
+                    }
+                } else {
+                    $all_items = wp_sls_api_filter_fields( $all_items, $excluded_fields );
+                }
+            }
+
+            $key = isset( $custom_output_paths[$route] ) && ! empty( $custom_output_paths[$route] ) ? $custom_output_paths[$route] : basename( $route );
+            $db_array[$key] = $all_items;
         }
     }
 
