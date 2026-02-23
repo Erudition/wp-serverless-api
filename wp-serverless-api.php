@@ -4,7 +4,7 @@
 Plugin Name: WP Serverless API
 Plugin URI: https://github.com/getshifter/wp-serverless-api
 Description: WordPress REST API to JSON File
-Version: 0.4.0
+Version: 0.5.0
 Author: Shifter
 Author URI: https://getshifter.io
 */
@@ -51,7 +51,6 @@ function wp_sls_api_discover_all() {
     }
 
     $paths = array();
-    $all_fields = array();
 
     if ( isset( $data['routes'] ) ) {
         foreach ( $data['routes'] as $path => $details ) {
@@ -95,6 +94,7 @@ function wp_sls_api_discover_all() {
             $endpoint_response = wp_remote_get( $endpoint_url );
             $is_accessible = false;
             $total_items = 0;
+            $path_fields = array();
             
             if ( ! is_wp_error( $endpoint_response ) ) {
                 if ( wp_remote_retrieve_response_code( $endpoint_response ) === 200 ) {
@@ -113,10 +113,10 @@ function wp_sls_api_discover_all() {
 
                         if ( is_array($first_item) ) {
                             foreach ($first_item as $field_key => $field_val) {
-                                $all_fields[$field_key] = true;
+                                $path_fields[$field_key] = true;
                                 if ( is_array($field_val) && $field_key === '_links' ) {
                                     foreach ($field_val as $sub_key => $sub_val) {
-                                        $all_fields[$field_key . '/' . $sub_key] = true;
+                                        $path_fields[$field_key . '/' . $sub_key] = true;
                                     }
                                 }
                             }
@@ -137,6 +137,8 @@ function wp_sls_api_discover_all() {
                 
                 if ( $type_slug === 'nav_menu_item' || 
                      $base_name === 'nav_menu_item' || 
+                     $base_name === 'navigation' ||
+                     $base_name === 'blocks' ||
                      strpos($base_name, 'wp_') === 0 || 
                      strpos($base_name, 'e-') === 0 || 
                      strpos($base_name, 'elementor_') === 0 ) {
@@ -150,14 +152,14 @@ function wp_sls_api_discover_all() {
                 'default_checked' => $is_default_checked,
                 'url' => esc_url( home_url( '/' ) ) . 'wp-json/' . $clean_path,
                 'total_items' => $total_items,
-                'base_name' => $base_name
+                'base_name' => $base_name,
+                'fields' => array_keys($path_fields)
             );
         }
     }
 
     return array(
-        'paths' => $paths,
-        'fields' => array_keys($all_fields)
+        'paths' => $paths
     );
 }
 
@@ -300,6 +302,8 @@ function wp_sls_api_admin_menu_styles() {
 add_action('admin_head', 'wp_sls_api_admin_menu_styles');
 
 function wp_sls_api_settings_page() {
+    $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'paths';
+
     if ( isset( $_POST['wp_sls_api_index_now'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
         build_db();
         echo '<div class="notice notice-success is-dismissible"><p>Database indexed successfully.</p></div>';
@@ -320,125 +324,158 @@ function wp_sls_api_settings_page() {
         
         $discovery = wp_sls_api_get_discovery();
         $paths = $discovery['paths'];
-        $fields = $discovery['fields'];
 
-        $submitted_included_paths = isset($_POST['included_paths']) ? array_map('sanitize_text_field', $_POST['included_paths']) : array();
-        $submitted_included_fields = isset($_POST['included_fields']) ? array_map('sanitize_text_field', $_POST['included_fields']) : array();
-        $submitted_output_paths = isset($_POST['output_paths']) ? $_POST['output_paths'] : array();
+        if ( $current_tab === 'paths' ) {
+            $submitted_included_paths = isset($_POST['included_paths']) ? array_map('sanitize_text_field', $_POST['included_paths']) : array();
+            $submitted_output_paths = isset($_POST['output_paths']) ? $_POST['output_paths'] : array();
 
-        $excluded_paths = array();
-        foreach ( $paths as $path => $info ) {
-            if ( !in_array($path, $submitted_included_paths) ) {
-                $excluded_paths[] = $path;
+            $excluded_paths = array();
+            foreach ( $paths as $path => $info ) {
+                if ( !in_array($path, $submitted_included_paths) ) {
+                    $excluded_paths[] = $path;
+                }
             }
-        }
 
-        $excluded_fields = array();
-        foreach ( $fields as $field ) {
-            if ( !in_array($field, $submitted_included_fields) ) {
-                $excluded_fields[] = $field;
+            $output_paths = array();
+            foreach ( $submitted_output_paths as $path => $val ) {
+                $output_paths[sanitize_text_field($path)] = sanitize_text_field($val);
             }
-        }
 
-        $output_paths = array();
-        foreach ( $submitted_output_paths as $path => $val ) {
-            $output_paths[sanitize_text_field($path)] = sanitize_text_field($val);
-        }
+            update_option( 'wp_sls_api_excluded_paths', $excluded_paths );
+            update_option( 'wp_sls_api_output_paths', $output_paths );
+        } else {
+            $submitted_included_fields = isset($_POST['included_fields']) ? array_map('sanitize_text_field', $_POST['included_fields']) : array();
+            
+            // We need to know all fields to determine exclusions
+            $excluded_paths = get_option('wp_sls_api_excluded_paths', array());
+            $has_saved_paths = get_option('wp_sls_api_excluded_paths') !== false;
+            $all_fields = array();
+            foreach ( $paths as $path => $info ) {
+                $is_checked = $has_saved_paths ? !in_array($path, $excluded_paths) : $info['default_checked'];
+                if ( $is_checked && $info['accessible'] ) {
+                    foreach ($info['fields'] as $f) $all_fields[$f] = true;
+                }
+            }
+            $all_field_keys = array_keys($all_fields);
 
-        update_option( 'wp_sls_api_excluded_paths', $excluded_paths );
-        update_option( 'wp_sls_api_excluded_fields', $excluded_fields );
-        update_option( 'wp_sls_api_output_paths', $output_paths );
+            $excluded_fields = array();
+            foreach ( $all_field_keys as $field ) {
+                if ( !in_array($field, $submitted_included_fields) ) {
+                    $excluded_fields[] = $field;
+                }
+            }
+            update_option( 'wp_sls_api_excluded_fields', $excluded_fields );
+        }
         
         echo '<div class="notice notice-success is-dismissible"><p>Settings saved.</p></div>';
     }
 
     $discovery = wp_sls_api_get_discovery();
     $paths = $discovery['paths'];
-    $fields = $discovery['fields'];
-    sort($fields);
 
     $has_saved_paths = get_option('wp_sls_api_excluded_paths') !== false;
     $saved_excluded_paths = get_option('wp_sls_api_excluded_paths', array());
     $saved_excluded_fields = get_option('wp_sls_api_excluded_fields', array('guid', '_links/curies'));
     $saved_output_paths = get_option('wp_sls_api_output_paths', array());
 
+    $active_fields = array();
+    foreach ( $paths as $path => $info ) {
+        $is_checked = $has_saved_paths ? !in_array($path, $saved_excluded_paths) : $info['default_checked'];
+        if ( $is_checked && $info['accessible'] ) {
+            foreach ($info['fields'] as $f) $active_fields[$f] = true;
+        }
+    }
+    $display_fields = array_keys($active_fields);
+    sort($display_fields);
+
     ?>
     <div class="wrap">
         <h1>WP Serverless API Settings</h1>
+        
+        <h2 class="nav-tab-wrapper">
+            <a href="?page=wp-sls-api&tab=paths" class="nav-tab <?php echo $current_tab == 'paths' ? 'nav-tab-active' : ''; ?>">Paths</a>
+            <a href="?page=wp-sls-api&tab=fields" class="nav-tab <?php echo $current_tab == 'fields' ? 'nav-tab-active' : ''; ?>">Fields</a>
+        </h2>
+
         <form method="post" action="">
             <?php wp_nonce_field( 'wp_sls_api_save_action' ); ?>
             
             <div class="sls-api-filter-row">
-                <strong>Filter List:</strong>
-                <label style="margin-left: 10px;"><input type="checkbox" id="filter-public" checked> Public Only</label>
-                <label style="margin-left: 10px;"><input type="checkbox" id="filter-named" checked> Named Only</label>
                 <input type="submit" name="wp_sls_api_index_now" class="button" value="Index Now" style="float: right;" />
+                <?php if ($current_tab === 'paths'): ?>
+                    <strong>Filter List:</strong>
+                    <label style="margin-left: 10px;"><input type="checkbox" id="filter-public" checked> Public Only</label>
+                    <label style="margin-left: 10px;"><input type="checkbox" id="filter-named" checked> Named Only</label>
+                <?php else: ?>
+                    <strong>Fields found in currently selected paths</strong>
+                <?php endif; ?>
             </div>
 
-            <h2>Discovered Paths</h2>
-            <p>Uncheck paths to exclude them from the generated JSON. Non-<code>wp/v2</code> paths are unchecked by default.</p>
-            <table class="wp-list-table widefat fixed striped" id="paths-table">
-                <thead>
-                    <tr>
-                        <th class="manage-column column-cb check-column"><input type="checkbox" id="cb-select-all-1"></th>
-                        <th class="manage-column">Input Path</th>
-                        <th class="manage-column">Output Path</th>
-                        <th class="manage-column">Friendly Name</th>
-                        <th class="manage-column">Preview</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ( $paths as $path => $info ): 
-                        $is_checked = $has_saved_paths ? !in_array($path, $saved_excluded_paths) : $info['default_checked'];
-                        $accessible = $info['accessible'];
-                        $disabled_attr = ! $accessible ? 'disabled' : '';
-                        if ( ! $accessible ) $is_checked = false; 
-                        $out_val = isset($saved_output_paths[$path]) ? $saved_output_paths[$path] : $info['base_name'];
-                        $has_name = !empty($info['name']);
-                        
-                        $row_classes = array();
-                        if ( !$accessible ) $row_classes[] = 'row-private';
-                        if ( !$has_name ) $row_classes[] = 'row-unnamed';
+            <?php if ($current_tab === 'paths'): ?>
+                <h2>Discovered Paths</h2>
+                <table class="wp-list-table widefat fixed striped" id="paths-table">
+                    <thead>
+                        <tr>
+                            <th class="manage-column column-cb check-column"><input type="checkbox" id="cb-select-all-1"></th>
+                            <th class="manage-column">Input Path</th>
+                            <th class="manage-column">Output Path</th>
+                            <th class="manage-column">Friendly Name</th>
+                            <th class="manage-column">Preview</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ( $paths as $path => $info ): 
+                            $is_checked = $has_saved_paths ? !in_array($path, $saved_excluded_paths) : $info['default_checked'];
+                            $accessible = $info['accessible'];
+                            $disabled_attr = ! $accessible ? 'disabled' : '';
+                            if ( ! $accessible ) $is_checked = false; 
+                            $out_val = isset($saved_output_paths[$path]) ? $saved_output_paths[$path] : $info['base_name'];
+                            $has_name = !empty($info['name']);
+                            
+                            $row_classes = array();
+                            if ( !$accessible ) $row_classes[] = 'row-private';
+                            if ( !$has_name ) $row_classes[] = 'row-unnamed';
+                        ?>
+                        <tr class="<?php echo implode(' ', $row_classes); ?>">
+                            <th class="check-column">
+                                <input type="checkbox" name="included_paths[]" value="<?php echo esc_attr($path); ?>" <?php checked($is_checked); ?> <?php echo $disabled_attr; ?> />
+                            </th>
+                            <td><code <?php if(!$accessible) echo 'style="color:#999;"'; ?>><?php echo esc_html($path); ?></code></td>
+                            <td>
+                                <input type="text" name="output_paths[<?php echo esc_attr($path); ?>]" value="<?php echo esc_attr($out_val); ?>" class="regular-text" style="width:100%;" />
+                            </td>
+                            <td><?php echo esc_html($info['name']); ?></td>
+                            <td>
+                                <a href="<?php echo esc_url($info['url']); ?>" target="_blank">
+                                    <?php if ( $accessible ): ?>
+                                        <?php echo $info['total_items'] > 0 ? sprintf('View %d items', $info['total_items']) : 'View'; ?>
+                                    <?php else: ?>
+                                        <span style="color:#cc0000;">View Error</span>
+                                    <?php endif; ?>
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else: ?>
+                <h2>Discovered Fields</h2>
+                <p>Uncheck fields to exclude them from all endpoint responses. Nested fields are indented.</p>
+                <div style="column-count: 3; background: #fff; padding: 15px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
+                    <?php foreach ( $display_fields as $field ): 
+                        $is_checked = !in_array($field, $saved_excluded_fields);
+                        $is_nested = strpos($field, '/') !== false;
+                        $field_class = $is_nested ? 'sls-api-field-nested' : '';
                     ?>
-                    <tr class="<?php echo implode(' ', $row_classes); ?>">
-                        <th class="check-column">
-                            <input type="checkbox" name="included_paths[]" value="<?php echo esc_attr($path); ?>" <?php checked($is_checked); ?> <?php echo $disabled_attr; ?> />
-                        </th>
-                        <td><code <?php if(!$accessible) echo 'style="color:#999;"'; ?>><?php echo esc_html($path); ?></code></td>
-                        <td>
-                            <input type="text" name="output_paths[<?php echo esc_attr($path); ?>]" value="<?php echo esc_attr($out_val); ?>" class="regular-text" style="width:100%;" />
-                        </td>
-                        <td><?php echo esc_html($info['name']); ?></td>
-                        <td>
-                            <a href="<?php echo esc_url($info['url']); ?>" target="_blank">
-                                <?php if ( $accessible ): ?>
-                                    <?php echo $info['total_items'] > 0 ? sprintf('View %d items', $info['total_items']) : 'View'; ?>
-                                <?php else: ?>
-                                    <span style="color:#cc0000;">View Error</span>
-                                <?php endif; ?>
-                            </a>
-                        </td>
-                    </tr>
+                    <div style="margin-bottom: 5px;" class="<?php echo $field_class; ?>">
+                        <label>
+                            <input type="checkbox" name="included_fields[]" value="<?php echo esc_attr($field); ?>" <?php checked($is_checked); ?> />
+                            <code><?php echo esc_html($field); ?></code>
+                        </label>
+                    </div>
                     <?php endforeach; ?>
-                </tbody>
-            </table>
-
-            <h2>Discovered Fields</h2>
-            <p>Uncheck fields to exclude them from all endpoint responses. Nested fields are indented.</p>
-            <div style="column-count: 3; background: #fff; padding: 15px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
-                <?php foreach ( $fields as $field ): 
-                    $is_checked = !in_array($field, $saved_excluded_fields);
-                    $is_nested = strpos($field, '/') !== false;
-                    $field_class = $is_nested ? 'sls-api-field-nested' : '';
-                ?>
-                <div style="margin-bottom: 5px;" class="<?php echo $field_class; ?>">
-                    <label>
-                        <input type="checkbox" name="included_fields[]" value="<?php echo esc_attr($field); ?>" <?php checked($is_checked); ?> />
-                        <code><?php echo esc_html($field); ?></code>
-                    </label>
                 </div>
-                <?php endforeach; ?>
-            </div>
+            <?php endif; ?>
 
             <p class="submit">
                 <input type="submit" name="wp_sls_api_save" class="button button-primary" value="Save Changes" />
@@ -456,6 +493,7 @@ function wp_sls_api_settings_page() {
             var table = document.getElementById('paths-table');
             
             function applyFilters() {
+                if (!table) return;
                 var rows = table.querySelectorAll('tbody tr');
                 for (var i = 0; i < rows.length; i++) {
                     var row = rows[i];
@@ -474,16 +512,19 @@ function wp_sls_api_settings_page() {
                 }
             }
             
-            publicFilter.addEventListener('change', applyFilters);
-            namedFilter.addEventListener('change', applyFilters);
-            applyFilters(); // Initial state
+            if (publicFilter) publicFilter.addEventListener('change', applyFilters);
+            if (namedFilter) namedFilter.addEventListener('change', applyFilters);
+            applyFilters(); 
 
-            document.getElementById('cb-select-all-1').addEventListener('change', function(e) {
-                var checkboxes = document.querySelectorAll('input[name="included_paths[]"]:not(:disabled)');
-                for (var i = 0; i < checkboxes.length; i++) {
-                    checkboxes[i].checked = e.target.checked;
-                }
-            });
+            var selectAll = document.getElementById('cb-select-all-1');
+            if (selectAll) {
+                selectAll.addEventListener('change', function(e) {
+                    var checkboxes = document.querySelectorAll('input[name="included_paths[]"]:not(:disabled)');
+                    for (var i = 0; i < checkboxes.length; i++) {
+                        checkboxes[i].checked = e.target.checked;
+                    }
+                });
+            }
         })();
     </script>
     <?php

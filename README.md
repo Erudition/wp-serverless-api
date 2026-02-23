@@ -2,7 +2,7 @@
 
 Explore WordPress data via the WP REST API as a JSON file for static WordPress Hosting on [Shifter](https://getshifter.io).
 
-This plugin dynamically discovers all publicly available REST API collections (posts, pages, media, custom post types, etc.) and compiles them into a single JSON file. It includes a comprehensive settings page to filter endpoints and fields, customize output keys, and trigger manual indexing.
+This plugin dynamically discovers all publicly available REST API collections (posts, pages, media, custom post types, etc.) and compiles them into a single JSON file. It includes a comprehensive tabbed settings page to filter endpoints and fields, customize output keys, and trigger manual indexing.
 
 1. Install as a WordPress Plugin
 2. Configure settings at **Settings -> WP Serverless API**
@@ -14,12 +14,20 @@ This plugin dynamically discovers all publicly available REST API collections (p
 
 - **Dynamic Discovery**: Automatically finds all valid REST API collection routes.
 - **Asynchronous Processing**: Indexing runs in the background via WP-Cron to prevent UI blocking.
+- **Tabbed Interface**: Organized settings for Paths and Fields.
 - **Customizable Output**: Rename JSON keys for each endpoint.
-- **Granular Filtering**: Exclude specific paths or individual fields (e.g., `guid`, `_links`) from the final output.
+- **Granular Field Filtering**: Exclude specific fields (e.g., `guid`, `_links`) from the final output. The field list automatically updates based on selected paths.
 - **Accessibility Verification**: Automatically identifies and flags endpoints that are not publicly accessible.
-- **Admin UI**: Easy-to-use settings page with filtering, previewing, and manual indexing.
+- **Admin UI**: Filterable path list with item counts and direct preview links.
 
 ## CHANGELOG
+
+### 0.5.0
+
+- Split settings into "Paths" and "Fields" tabs.
+- Dynamic Field List: Only show fields present in selected paths.
+- Added `wp/v2/navigation` and `wp/v2/blocks` to default exclusions.
+- Cleaned up UI hints and improved layout.
 
 ### 0.4.0
 
