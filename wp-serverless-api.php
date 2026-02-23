@@ -55,8 +55,10 @@ function wp_sls_api_discover_all() {
 
     if ( isset( $data['routes'] ) ) {
         foreach ( $data['routes'] as $path => $details ) {
-            // Only include standard wp/v2 routes
-            if ( strpos( $path, '/wp/v2/' ) !== 0 ) continue;
+            // Skip root
+            if ( $path === '/' ) continue;
+            // Skip namespace roots
+            if ( isset( $details['namespace'] ) && $path === '/' . $details['namespace'] ) continue;
             // Skip routes with regex parameters
             if ( strpos( $path, '(?P<' ) !== false ) continue;
             // Skip schema endpoints
@@ -71,25 +73,30 @@ function wp_sls_api_discover_all() {
             $endpoint_url = esc_url( home_url( '/' ) ) . 'wp-json/' . $clean_path . '?per_page=1';
             $endpoint_response = wp_remote_get( $endpoint_url );
             $is_accessible = false;
+            $total_items = 0;
             
-            if ( ! is_wp_error( $endpoint_response ) && wp_remote_retrieve_response_code( $endpoint_response ) === 200 ) {
-                $is_accessible = true;
-                $sample_body = wp_remote_retrieve_body($endpoint_response);
-                $sample_data = json_decode($sample_body, true);
-                if ( is_array($sample_data) && !empty($sample_data) ) {
-                    $first_item = array();
-                    if ( isset($sample_data[0]) ) {
-                        $first_item = $sample_data[0];
-                    } else if ( array_keys($sample_data) !== range(0, count($sample_data) - 1) ) {
-                        $first_item = $sample_data;
-                    }
+            if ( ! is_wp_error( $endpoint_response ) ) {
+                if ( wp_remote_retrieve_response_code( $endpoint_response ) === 200 ) {
+                    $is_accessible = true;
+                    $total_items = (int) wp_remote_retrieve_header( $endpoint_response, 'x-wp-total' );
+                    
+                    $sample_body = wp_remote_retrieve_body($endpoint_response);
+                    $sample_data = json_decode($sample_body, true);
+                    if ( is_array($sample_data) && !empty($sample_data) ) {
+                        $first_item = array();
+                        if ( isset($sample_data[0]) ) {
+                            $first_item = $sample_data[0];
+                        } else if ( array_keys($sample_data) !== range(0, count($sample_data) - 1) ) {
+                            $first_item = $sample_data;
+                        }
 
-                    if ( is_array($first_item) ) {
-                        foreach ($first_item as $field_key => $field_val) {
-                            $all_fields[$field_key] = true;
-                            if ( is_array($field_val) && $field_key === '_links' ) {
-                                foreach ($field_val as $sub_key => $sub_val) {
-                                    $all_fields[$field_key . '/' . $sub_key] = true;
+                        if ( is_array($first_item) ) {
+                            foreach ($first_item as $field_key => $field_val) {
+                                $all_fields[$field_key] = true;
+                                if ( is_array($field_val) && $field_key === '_links' ) {
+                                    foreach ($field_val as $sub_key => $sub_val) {
+                                        $all_fields[$field_key . '/' . $sub_key] = true;
+                                    }
                                 }
                             }
                         }
@@ -98,25 +105,29 @@ function wp_sls_api_discover_all() {
             }
 
             $is_default_checked = false;
-            $type_slug = '';
-            if ( isset( $rest_bases[$base_name] ) ) {
-                $is_default_checked = true;
-                $type_slug = $rest_bases[$base_name]['slug'];
-            }
-            
-            if ( $type_slug === 'nav_menu_item' || 
-                 $base_name === 'nav_menu_item' || 
-                 strpos($base_name, 'wp_') === 0 || 
-                 strpos($base_name, 'e-') === 0 || 
-                 strpos($base_name, 'elementor_') === 0 ) {
-                $is_default_checked = false;
+            if ( strpos( $path, '/wp/v2/' ) === 0 ) {
+                $type_slug = '';
+                if ( isset( $rest_bases[$base_name] ) ) {
+                    $is_default_checked = true;
+                    $type_slug = $rest_bases[$base_name]['slug'];
+                }
+                
+                if ( $type_slug === 'nav_menu_item' || 
+                     $base_name === 'nav_menu_item' || 
+                     strpos($base_name, 'wp_') === 0 || 
+                     strpos($base_name, 'e-') === 0 || 
+                     strpos($base_name, 'elementor_') === 0 ) {
+                    $is_default_checked = false;
+                }
             }
 
             $paths[$clean_path] = array(
                 'accessible' => $is_accessible,
                 'name' => isset($rest_bases[$base_name]['name']) ? $rest_bases[$base_name]['name'] : '',
                 'default_checked' => $is_default_checked,
-                'url' => esc_url( home_url( '/' ) ) . 'wp-json/' . $clean_path
+                'url' => esc_url( home_url( '/' ) ) . 'wp-json/' . $clean_path,
+                'total_items' => $total_items,
+                'base_name' => $base_name
             );
         }
     }
@@ -160,6 +171,7 @@ function wp_sls_api_filter_fields($item, $excluded_fields) {
 function compile_db( $routes = array() ) {
     $has_saved_paths = get_option('wp_sls_api_excluded_paths') !== false;
     $excluded_paths = get_option('wp_sls_api_excluded_paths', array());
+    $custom_output_paths = get_option('wp_sls_api_output_paths', array());
     $excluded_fields = get_option('wp_sls_api_excluded_fields', array('guid', '_links/curies'));
 
     if ( empty( $routes ) ) {
@@ -201,7 +213,7 @@ function compile_db( $routes = array() ) {
                 }
             }
 
-            $key = basename( $route );
+            $key = isset($custom_output_paths[$route]) && !empty($custom_output_paths[$route]) ? $custom_output_paths[$route] : basename( $route );
             $db_array[$key] = $jsonData;
         }
     }
@@ -267,6 +279,7 @@ function wp_sls_api_settings_page() {
 
         $submitted_included_paths = isset($_POST['included_paths']) ? array_map('sanitize_text_field', $_POST['included_paths']) : array();
         $submitted_included_fields = isset($_POST['included_fields']) ? array_map('sanitize_text_field', $_POST['included_fields']) : array();
+        $submitted_output_paths = isset($_POST['output_paths']) ? $_POST['output_paths'] : array();
 
         $excluded_paths = array();
         foreach ( $paths as $path => $info ) {
@@ -282,8 +295,14 @@ function wp_sls_api_settings_page() {
             }
         }
 
+        $output_paths = array();
+        foreach ( $submitted_output_paths as $path => $val ) {
+            $output_paths[sanitize_text_field($path)] = sanitize_text_field($val);
+        }
+
         update_option( 'wp_sls_api_excluded_paths', $excluded_paths );
         update_option( 'wp_sls_api_excluded_fields', $excluded_fields );
+        update_option( 'wp_sls_api_output_paths', $output_paths );
         
         echo '<div class="notice notice-success is-dismissible"><p>Settings saved.</p></div>';
     }
@@ -296,6 +315,7 @@ function wp_sls_api_settings_page() {
     $has_saved_paths = get_option('wp_sls_api_excluded_paths') !== false;
     $saved_excluded_paths = get_option('wp_sls_api_excluded_paths', array());
     $saved_excluded_fields = get_option('wp_sls_api_excluded_fields', array('guid', '_links/curies'));
+    $saved_output_paths = get_option('wp_sls_api_output_paths', array());
 
     ?>
     <div class="wrap">
@@ -303,13 +323,14 @@ function wp_sls_api_settings_page() {
         <form method="post" action="">
             <?php wp_nonce_field( 'wp_sls_api_save_action' ); ?>
             
-            <h2>Discovered Paths (/wp/v2/)</h2>
-            <p>Uncheck paths to exclude them from the generated JSON.</p>
+            <h2>Discovered Paths</h2>
+            <p>Uncheck paths to exclude them from the generated JSON. Non-<code>wp/v2</code> paths are unchecked by default.</p>
             <table class="wp-list-table widefat fixed striped">
                 <thead>
                     <tr>
                         <th class="manage-column column-cb check-column"><input type="checkbox" id="cb-select-all-1"></th>
-                        <th class="manage-column">Path</th>
+                        <th class="manage-column">Input Path</th>
+                        <th class="manage-column">Output Path</th>
                         <th class="manage-column">Friendly Name</th>
                         <th class="manage-column">Preview</th>
                     </tr>
@@ -317,21 +338,28 @@ function wp_sls_api_settings_page() {
                 <tbody>
                     <?php foreach ( $paths as $path => $info ): 
                         $is_checked = $has_saved_paths ? !in_array($path, $saved_excluded_paths) : $info['default_checked'];
-                        $disabled = ! $info['accessible'] ? 'disabled' : '';
-                        if ( $disabled ) $is_checked = false; 
+                        $accessible = $info['accessible'];
+                        $disabled_attr = ! $accessible ? 'disabled' : '';
+                        if ( ! $accessible ) $is_checked = false; 
+                        $out_val = isset($saved_output_paths[$path]) ? $saved_output_paths[$path] : $info['base_name'];
                     ?>
                     <tr>
                         <th class="check-column">
-                            <input type="checkbox" name="included_paths[]" value="<?php echo esc_attr($path); ?>" <?php checked($is_checked); ?> <?php echo $disabled; ?> />
+                            <input type="checkbox" name="included_paths[]" value="<?php echo esc_attr($path); ?>" <?php checked($is_checked); ?> <?php echo $disabled_attr; ?> />
                         </th>
-                        <td><code <?php if($disabled) echo 'style="color:#999;"'; ?>><?php echo esc_html($path); ?></code></td>
+                        <td><code <?php if(!$accessible) echo 'style="color:#999;"'; ?>><?php echo esc_html($path); ?></code></td>
+                        <td>
+                            <input type="text" name="output_paths[<?php echo esc_attr($path); ?>]" value="<?php echo esc_attr($out_val); ?>" class="regular-text" style="width:100%;" />
+                        </td>
                         <td><?php echo esc_html($info['name']); ?></td>
                         <td>
-                            <?php if ( $info['accessible'] ): ?>
-                                <a href="<?php echo esc_url($info['url']); ?>" target="_blank">Preview</a>
-                            <?php else: ?>
-                                <span style="color:#999;">Not accessible</span>
-                            <?php endif; ?>
+                            <a href="<?php echo esc_url($info['url']); ?>" target="_blank">
+                                <?php if ( $accessible ): ?>
+                                    View <?php echo (int) $info['total_items']; ?> items
+                                <?php else: ?>
+                                    <span style="color:#cc0000;">View Error</span>
+                                <?php endif; ?>
+                            </a>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -339,12 +367,14 @@ function wp_sls_api_settings_page() {
             </table>
 
             <h2>Discovered Fields</h2>
-            <p>Uncheck fields to exclude them from all endpoint responses.</p>
+            <p>Uncheck fields to exclude them from all endpoint responses. Nested fields are indented.</p>
             <div style="column-count: 3; background: #fff; padding: 15px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
                 <?php foreach ( $fields as $field ): 
                     $is_checked = !in_array($field, $saved_excluded_fields);
+                    $is_nested = strpos($field, '/') !== false;
+                    $margin_left = $is_nested ? '20px' : '0px';
                 ?>
-                <div style="margin-bottom: 5px;">
+                <div style="margin-bottom: 5px; margin-left: <?php echo $margin_left; ?>;">
                     <label>
                         <input type="checkbox" name="included_fields[]" value="<?php echo esc_attr($field); ?>" <?php checked($is_checked); ?> />
                         <code><?php echo esc_html($field); ?></code>
