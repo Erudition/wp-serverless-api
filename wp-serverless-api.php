@@ -4,7 +4,7 @@
 Plugin Name: WP Serverless API
 Plugin URI: https://github.com/getshifter/wp-serverless-api
 Description: WordPress REST API to JSON File
-Version: 1.0.0
+Version: 1.1.0
 Author: Shifter
 Author URI: https://getshifter.io
 */
@@ -249,11 +249,33 @@ function wp_sls_api_filter_fields($item, $excluded_fields) {
     return $item;
 }
 
+/**
+ * Recursively convert all home_url matches to relative paths
+ */
+function wp_sls_api_make_relative( $input ) {
+    static $home_url;
+    if ( ! isset( $home_url ) ) {
+        $home_url = home_url();
+    }
+
+    if ( is_array( $input ) ) {
+        foreach ( $input as $key => $value ) {
+            $input[$key] = wp_sls_api_make_relative( $value );
+        }
+    } elseif ( is_string( $input ) ) {
+        if ( strpos( $input, $home_url ) === 0 ) {
+            return '/' . ltrim( str_replace( $home_url, '', $input ), '/' );
+        }
+    }
+    return $input;
+}
+
 function compile_db( $routes = array() ) {
     $has_saved_paths = get_option('wp_sls_api_excluded_paths') !== false;
     $excluded_paths = get_option('wp_sls_api_excluded_paths', array());
     $custom_output_paths = get_option('wp_sls_api_output_paths', array());
     $excluded_fields = get_option('wp_sls_api_excluded_fields', array('guid', '_links/curies'));
+    $make_relative = get_option('wp_sls_api_relative_urls', 'yes') === 'yes';
 
     if ( empty( $routes ) ) {
         $discovery = wp_sls_api_get_discovery();
@@ -331,6 +353,10 @@ function compile_db( $routes = array() ) {
                 } else {
                     $all_items = wp_sls_api_filter_fields( $all_items, $excluded_fields );
                 }
+            }
+
+            if ( $make_relative ) {
+                $all_items = wp_sls_api_make_relative( $all_items );
             }
 
             $key = isset( $custom_output_paths[$route] ) && ! empty( $custom_output_paths[$route] ) ? $custom_output_paths[$route] : basename( $route );
@@ -416,6 +442,7 @@ function wp_sls_api_settings_page() {
         delete_option( 'wp_sls_api_excluded_paths' );
         delete_option( 'wp_sls_api_excluded_fields' );
         delete_option( 'wp_sls_api_output_paths' );
+        delete_option( 'wp_sls_api_relative_urls' );
         delete_transient( 'wp_sls_api_discovery' );
         echo '<script>window.location.href="?page=wp-sls-api&tab=' . esc_attr($current_tab) . '";</script>';
         return;
@@ -428,6 +455,7 @@ function wp_sls_api_settings_page() {
         if ( $current_tab === 'paths' ) {
             $submitted_included_paths = isset($_POST['included_paths']) ? array_map('sanitize_text_field', $_POST['included_paths']) : array();
             $submitted_output_paths = isset($_POST['output_paths']) ? $_POST['output_paths'] : array();
+            $relative_urls = isset($_POST['relative_urls']) ? 'yes' : 'no';
 
             $excluded_paths = array();
             foreach ( $groups as $group ) {
@@ -445,6 +473,7 @@ function wp_sls_api_settings_page() {
 
             update_option( 'wp_sls_api_excluded_paths', $excluded_paths );
             update_option( 'wp_sls_api_output_paths', $output_paths );
+            update_option( 'wp_sls_api_relative_urls', $relative_urls );
         } else {
             $submitted_included_fields = isset($_POST['included_fields']) ? array_map('sanitize_text_field', $_POST['included_fields']) : array();
             
@@ -473,6 +502,7 @@ function wp_sls_api_settings_page() {
     $saved_excluded_paths = get_option('wp_sls_api_excluded_paths', array());
     $saved_excluded_fields = get_option('wp_sls_api_excluded_fields', array('guid', '_links/curies'));
     $saved_output_paths = get_option('wp_sls_api_output_paths', array());
+    $saved_relative_urls = get_option('wp_sls_api_relative_urls', 'yes') === 'yes';
 
     $active_fields = array();
     foreach ( $groups as $group ) {
@@ -504,6 +534,7 @@ function wp_sls_api_settings_page() {
                     <strong>Filter List:</strong>
                     <label style="margin-left: 10px;"><input type="checkbox" id="filter-public" checked> Public Only</label>
                     <label style="margin-left: 10px;"><input type="checkbox" id="filter-named" checked> Named Only</label>
+                    <label style="margin-left: 30px;"><input type="checkbox" name="relative_urls" value="1" <?php checked($saved_relative_urls); ?>> Make URLs Relative (Recommended for Static)</label>
                 <?php else: ?>
                     <strong>Fields grouped by component</strong>
                 <?php endif; ?>
