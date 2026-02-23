@@ -23,6 +23,16 @@ This plugin dynamically discovers all publicly available REST API collections (p
 
 ## CHANGELOG
 
+### 0.6.2
+
+- UI Refinement: "Input Path" column now strips the namespace prefix already shown in the section header.
+- Preview Link Enhancements:
+    - Lists show "View N items".
+    - Objects show "View N fields".
+    - Both show "View" if empty.
+- Added `media` to the default exclusion list.
+- Improved version consistency and UI grouping.
+
 ### 0.6.1
 
 - UI Refinement: Moved "Build Database Now" button to the bottom and added a top-level "Re-discover" button.

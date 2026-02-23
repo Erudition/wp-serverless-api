@@ -4,7 +4,7 @@
 Plugin Name: WP Serverless API
 Plugin URI: https://github.com/getshifter/wp-serverless-api
 Description: WordPress REST API to JSON File
-Version: 0.6.1
+Version: 0.6.2
 Author: Shifter
 Author URI: https://getshifter.io
 */
@@ -120,20 +120,26 @@ function wp_sls_api_discover_all() {
             $endpoint_response = wp_remote_get( $endpoint_url );
             $is_accessible = false;
             $total_items = 0;
+            $total_fields = 0;
+            $is_list = false;
             $path_fields = array();
             
             if ( ! is_wp_error( $endpoint_response ) ) {
                 if ( wp_remote_retrieve_response_code( $endpoint_response ) === 200 ) {
                     $is_accessible = true;
-                    $total_items = (int) wp_remote_retrieve_header( $endpoint_response, 'x-wp-total' );
-                    
                     $sample_body = wp_remote_retrieve_body($endpoint_response);
                     $sample_data = json_decode($sample_body, true);
+                    
                     if ( is_array($sample_data) && !empty($sample_data) ) {
+                        $is_list = isset($sample_data[0]);
                         $first_item = array();
-                        if ( isset($sample_data[0]) ) {
+                        
+                        if ( $is_list ) {
+                            $total_items = (int) wp_remote_retrieve_header( $endpoint_response, 'x-wp-total' );
                             $first_item = $sample_data[0];
-                        } else if ( array_keys($sample_data) !== range(0, count($sample_data) - 1) ) {
+                        } else {
+                            $is_list = false;
+                            $total_fields = count($sample_data);
                             $first_item = $sample_data;
                         }
 
@@ -167,6 +173,7 @@ function wp_sls_api_discover_all() {
                      $base_name === 'blocks' ||
                      $base_name === 'types' ||
                      $base_name === 'taxonomies' ||
+                     $base_name === 'media' ||
                      strpos($base_name, 'wp_') === 0 || 
                      strpos($base_name, 'e-') === 0 || 
                      strpos($base_name, 'elementor_') === 0 ) {
@@ -188,6 +195,8 @@ function wp_sls_api_discover_all() {
                 'default_checked' => $is_default_checked,
                 'url' => esc_url( home_url( '/' ) ) . 'wp-json/' . $clean_path,
                 'total_items' => $total_items,
+                'total_fields' => $total_fields,
+                'is_list' => $is_list,
                 'base_name' => $base_name,
                 'fields' => array_keys($path_fields)
             );
@@ -488,21 +497,31 @@ function wp_sls_api_settings_page() {
                                 $row_classes = array();
                                 if ( !$accessible ) $row_classes[] = 'row-private';
                                 if ( !$has_name ) $row_classes[] = 'row-unnamed';
+
+                                // Strip prefix implied by section
+                                $display_input_path = ltrim(substr($path, strlen($group_key)), '/');
+                                if ( empty($display_input_path) ) $display_input_path = $path; // fallback
                             ?>
                             <tr class="<?php echo implode(' ', $row_classes); ?>">
                                 <th class="check-column">
                                     <input type="checkbox" name="included_paths[]" value="<?php echo esc_attr($path); ?>" <?php checked($is_checked); ?> <?php echo $disabled_attr; ?> />
                                 </th>
-                                <td><code <?php if(!$accessible) echo 'style="color:#999;"'; ?>><?php echo esc_html($path); ?></code></td>
+                                <td><code <?php if(!$accessible) echo 'style="color:#999;"'; ?>><?php echo esc_html($display_input_path); ?></code></td>
                                 <td>
                                     <input type="text" name="output_paths[<?php echo esc_attr($path); ?>]" value="<?php echo esc_attr($out_val); ?>" class="regular-text" style="width:100%;" />
                                 </td>
                                 <td><?php echo esc_html($info['name']); ?></td>
                                 <td>
                                     <a href="<?php echo esc_url($info['url']); ?>" target="_blank" <?php if(!$accessible) echo 'style="color:#999;"'; ?>>
-                                        <?php if ( $accessible ): ?>
-                                            <?php echo $info['total_items'] > 0 ? sprintf('View %d items', $info['total_items']) : 'View'; ?>
-                                        <?php else: ?>
+                                        <?php if ( $accessible ): 
+                                            if ( $info['is_list'] && $info['total_items'] > 0 ) {
+                                                echo sprintf('View %d items', $info['total_items']);
+                                            } else if ( !$info['is_list'] && $info['total_fields'] > 0 ) {
+                                                echo sprintf('View %d fields', $info['total_fields']);
+                                            } else {
+                                                echo 'View';
+                                            }
+                                        else: ?>
                                             Not public
                                         <?php endif; ?>
                                     </a>
