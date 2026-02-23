@@ -4,7 +4,7 @@
 Plugin Name: WP Serverless API
 Plugin URI: https://github.com/getshifter/wp-serverless-api
 Description: WordPress REST API to JSON File
-Version: 0.6.2
+Version: 1.0.0
 Author: Shifter
 Author URI: https://getshifter.io
 */
@@ -367,7 +367,8 @@ function wp_sls_api_settings_page() {
 
     if ( isset( $_POST['wp_sls_api_build_now'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
         build_db();
-        echo '<div class="notice notice-success is-dismissible"><p>Database built successfully.</p></div>';
+        $db_url = content_url('/wp-sls-api/db.json');
+        echo '<div class="notice notice-success is-dismissible"><p>Database built successfully. <a href="' . esc_url($db_url) . '" target="_blank">View in browser</a></p></div>';
     }
 
     if ( isset( $_POST['wp_sls_api_rediscover'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {

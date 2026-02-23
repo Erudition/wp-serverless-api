@@ -19,19 +19,20 @@ This plugin dynamically discovers all publicly available REST API collections (p
 - **Customizable Output**: Rename JSON keys for each endpoint.
 - **Granular Field Filtering**: Exclude specific fields (e.g., `guid`, `_links`) from the final output. The field list automatically updates based on selected paths.
 - **Accessibility Verification**: Automatically identifies and flags endpoints that are not publicly accessible.
-- **Admin UI**: Filterable path list with item counts and direct preview links.
+- **Admin UI**: Filterable path list with item counts, object field counts, and direct preview links.
 
 ## CHANGELOG
 
-### 0.6.2
+### 1.0.0
 
+- Stable release.
 - UI Refinement: "Input Path" column now strips the namespace prefix already shown in the section header.
 - Preview Link Enhancements:
     - Lists show "View N items".
     - Objects show "View N fields".
-    - Both show "View" if empty.
-- Added `media` to the default exclusion list.
-- Improved version consistency and UI grouping.
+    - Added "View in browser" link to successful build notice.
+- Added `media`, `wp/v2/types`, and `wp/v2/taxonomies` to the default exclusion list.
+- Improved version consistency and UI grouping across all tabs.
 
 ### 0.6.1
 
