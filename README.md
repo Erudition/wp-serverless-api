@@ -2,20 +2,41 @@
 
 Explore WordPress data via the WP REST API as a JSON file for static WordPress Hosting on [Shifter](https://getshifter.io).
 
-This plugin dynamically discovers all publicly available REST API collections (posts, pages, media, custom post types, etc.) and compiles them into a single JSON file.
+This plugin dynamically discovers all publicly available REST API collections (posts, pages, media, custom post types, etc.) and compiles them into a single JSON file. It includes a comprehensive settings page to filter endpoints and fields, customize output keys, and trigger manual indexing.
 
 1. Install as a WordPress Plugin
-2. Activate and save or create a new post or page
-3. Create a new static Artifact on Shifter
-4. Visit your new WP Serverless API endpoint at `example.com/wp-content/wp-sls-api/db.json`
+2. Configure settings at **Settings -> WP Serverless API**
+3. Save or create a new post or page (triggers background index)
+4. Create a new static Artifact on Shifter
+5. Visit your new WP Serverless API endpoint at `example.com/wp-content/wp-sls-api/db.json`
+
+## FEATURES
+
+- **Dynamic Discovery**: Automatically finds all valid REST API collection routes.
+- **Asynchronous Processing**: Indexing runs in the background via WP-Cron to prevent UI blocking.
+- **Customizable Output**: Rename JSON keys for each endpoint.
+- **Granular Filtering**: Exclude specific paths or individual fields (e.g., `guid`, `_links`) from the final output.
+- **Accessibility Verification**: Automatically identifies and flags endpoints that are not publicly accessible.
+- **Admin UI**: Easy-to-use settings page with filtering, previewing, and manual indexing.
 
 ## CHANGELOG
+
+### 0.4.0
+
+- Added a comprehensive Admin Settings page.
+- Added "Output Path" customization to rename JSON keys.
+- Added field-level exclusions with visual nested indentation.
+- Added "Index Now" and "Reset to Defaults" buttons.
+- Improved filtering: Only considers GET endpoints with no required arguments.
+- Added "Public Only" and "Named Only" UI filters for discovered paths.
+- Display live item counts in the discovery table.
 
 ### 0.3.0
 
 - Added dynamic discovery of all public REST API collection routes.
 - Added support for Custom Post Types (CPT) and plugin-provided endpoints (Pods, Elementor, etc.) without manual configuration.
 - Switched to WordPress HTTP API (`wp_remote_get`) for better reliability and access checking.
+- Offloaded indexing to a background WP-Cron task for non-blocking post saves.
 
 ### 0.2.1
 

@@ -4,7 +4,7 @@
 Plugin Name: WP Serverless API
 Plugin URI: https://github.com/getshifter/wp-serverless-api
 Description: WordPress REST API to JSON File
-Version: 0.3.0
+Version: 0.4.0
 Author: Shifter
 Author URI: https://getshifter.io
 */
@@ -305,6 +305,14 @@ function wp_sls_api_settings_page() {
         echo '<div class="notice notice-success is-dismissible"><p>Database indexed successfully.</p></div>';
     }
 
+    if ( isset( $_POST['wp_sls_api_reset'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
+        delete_option( 'wp_sls_api_excluded_paths' );
+        delete_option( 'wp_sls_api_excluded_fields' );
+        delete_option( 'wp_sls_api_output_paths' );
+        delete_transient( 'wp_sls_api_discovery' );
+        echo '<div class="notice notice-success is-dismissible"><p>Settings reset to defaults.</p></div>';
+    }
+
     if ( isset( $_POST['wp_sls_api_save'] ) && check_admin_referer( 'wp_sls_api_save_action' ) ) {
         if ( isset($_POST['wp_sls_api_refresh_cache']) ) {
             delete_transient('wp_sls_api_discovery');
@@ -434,6 +442,7 @@ function wp_sls_api_settings_page() {
 
             <p class="submit">
                 <input type="submit" name="wp_sls_api_save" class="button button-primary" value="Save Changes" />
+                <input type="submit" name="wp_sls_api_reset" class="button" value="Reset to Defaults" onclick="return confirm('Are you sure you want to reset all settings to defaults?');" />
                 <label style="margin-left: 15px;">
                     <input type="checkbox" name="wp_sls_api_refresh_cache" value="1" /> Force Refresh Discovery Cache
                 </label>
