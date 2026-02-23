@@ -125,8 +125,16 @@ function build_db()
     $db = compile_db();
     save_db($db);
 }
+add_action( 'wp_serverless_api_build_db_worker', 'build_db' );
+
+function schedule_build_db()
+{
+    if ( ! wp_next_scheduled( 'wp_serverless_api_build_db_worker' ) ) {
+        wp_schedule_single_event( time(), 'wp_serverless_api_build_db_worker' );
+    }
+}
 
 /**
  * Build on Post Save
  */
-add_action( 'save_post', 'build_db' );
+add_action( 'save_post', 'schedule_build_db' );
